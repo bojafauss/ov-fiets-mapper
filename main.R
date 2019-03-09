@@ -18,7 +18,7 @@ db <- dbConnect(SQLite(), config$database)
 # retrieve data data
 df.trains <-  map2_df(combinations$stations, combinations$type, get_trains, query.time) %>%
   select(
-    trainCode, #passed to remove duplicates during analysis
+    trainCode = name, #passed to remove duplicates during analysis
     trainCategory,
     cancelled, #curious about how many trains get cancelled per day
     plannedDateTime,

@@ -6,3 +6,4 @@
 
 credentials.yml
 *.db
+.Rproj.user
