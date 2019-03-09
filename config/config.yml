@@ -6,3 +6,5 @@ stations:
   - Rtn
   - Rtst
   - Rtz
+database:
+  datastore.db

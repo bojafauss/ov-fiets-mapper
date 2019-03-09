@@ -9,3 +9,7 @@ Results are stored in a sqlite database and furhter used to visualize the outcom
 
 Credentials are in a yaml file, which is conveniently added to the `gitignore`
 
+# Use
+
+To make it run it must be added to the cron tab.
+A run every 10-15 minutes should be enough to properly cover the day.
