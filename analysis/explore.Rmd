@@ -1,0 +1,113 @@
+---
+title: 'Data exploration'
+author: 'Bruno'
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    code_folding: hide
+params:
+  dbpath: '../../backup.db'
+---
+
+```{r, setup, results="hide", message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(lubridate)
+library(RSQLite)
+library(dbplyr)
+db <- dbConnect(SQLite(), params$dbpath)
+knitr::opts_chunk$set(connection = "db")
+```
+
+```{sql, makeindexes, results="hide"}
+create index if not exists bikestationsindex on biketable(stationCode);
+create index if not exists codeindex on traintable(trainCode);
+create index if not exists categoryindex on traintable(trainCategory);
+create index if not exists trainstationindex on traintable(stationCode);
+```
+
+## Initial look at the collected data
+
+The aim of this **Rmd** is to have an initial look at the collected data, storing the output and documenting the steps taken from raw data to assumption.
+
+Most visualizations will be quick and dirty, as better images are going to be done in the *visualize.R* file.
+
+Data are loaded using a parameter variable in the document. It would be a good practice to stop the database loading script before running this file, to avoid possible issues due to concurrent writing. In this specific case a temporary copy of the database was created beforehand.
+
+A decision to take is where to keep the heavy lifting part of the querying. While loading in R gives more flexibility, a good idea is to keep what is possible into the database to take advantage of its faster querying. Here I load in memory, as the data set is small.
+
+## The bikes table
+
+First of all let's check for needed transformations replications, etc.
+
+The table looks clean, with no strange values in the date encoding.
+```{sql head of bike table}
+select * from biketable limit 20
+```
+
+
+The amount of repetitions, however, tells another story. The first and last day can be safely removed, as they are most probably incomplete sets.
+
+There are however some missing data for different stations on different days that will need to be dealt with.
+In addition, *Rta* station has twice the entries of the others, which looking at the documentation of the API from which the data are sources suggests that there are two bike stalls against the other stations one. This data will need to be grouped.
+
+```{r, bike table issues}
+bike.table <- dbReadTable(db, 'biketable') %>%
+  as_tibble() %>%
+  mutate(
+    callTime = as_datetime(callTime),
+    day = date(callTime),
+    stationCode = as.factor(stationCode),
+    availableBikes = as.integer(availableBikes))
+temp.df <- bike.table %>%
+  group_by(day, stationCode) %>%
+  summarise(entries = n())
+ggplot(temp.df, aes(day, entries, color = stationCode)) +
+  geom_line()
+```
+
+A more in depth look at the values gives an insight of which data are missing, and on how they can be dealt with later.
+
+```{r, missing data bikes}
+temp.df <- bike.table %>%
+  filter(day > min(day) & day < max(day)) %>%
+  group_by(callTime, stationCode) %>%
+  summarise(bikes = sum(availableBikes))
+ggplot(temp.df, aes(callTime, bikes)) +
+  geom_point(alpha = 0.3) +
+  geom_line() +
+  facet_wrap(~stationCode, scales = 'free')
+```
+
+Apparently between march 19 and 21 there are a lot of data missing for the *Rtd* station. This is unfortunate, as that is the one with the most bikes. Also, being the missing values contiguos over a long stretch of time they cannot be inputed taking the average of the surrounding ones.
+
+On the other hand we can visualize that the process seems to follow a certain seasonality (as it is to be expected in this case), with waves during the day and dips in the weekends.
+
+While *Rlb* and *Rtb* do not have enough bikes to be useful in modelling that the remaining stations are promising.
+
+It is alsoo possible to identify to different trends between the Central station (*Rtd*) which is the main entry point to the city, and Alexander station (*Rta*), which is a commuter station.
+
+As expected the daily distribution of values do not provide other glaring information.
+
+```{r}
+temp.df <- bike.table %>%
+  filter(stationCode == 'Rtd') %>%
+  group_by(day, stationCode) %>%
+  mutate(is.weekend = (wday(day) >= 6))
+ggplot(temp.df, aes(day, availableBikes, group = day)) + geom_violin(aes(fill = is.weekend))
+```
+
+## The trains table
+
+Here there are more values to be handled. Let's give it a first look.
+
+```{sql, head of trains table}
+select * from traintable limit 20
+```
+
+The date time field requires a bit of play before being usable in a smooth way inside R, there are multiple entries for arrivals and departures, as well as for tracking train delays.
+Some cleaning is in order.
+
+```{r}
+dbDisconnect(db)
+```
